@@ -5,11 +5,10 @@ import threading
 import sqlite3
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QVBoxLayout, QHBoxLayout, QWidget,
-    QTextEdit, QLineEdit, QPushButton, QLabel, QListWidget, QMessageBox, QFileDialog, QColorDialog, QInputDialog
+    QTextEdit, QLineEdit, QPushButton, QLabel, QListWidget, QMessageBox, QFileDialog
 )
 from PyQt5.QtGui import QFont, QColor, QPalette
 from PyQt5.QtCore import Qt
-
 
 # Encryption for messages
 from cryptography.fernet import Fernet
@@ -212,25 +211,25 @@ class LoginWindow(QMainWindow):
         conn.close()
 
     def open_chat_window(self, username):
-        self.chat_window = ChatApp(username)  # Pass the username
+        self.chat_window = ChatApp(username)
         self.chat_window.show()
         self.close()
 
 
 class ChatApp(QMainWindow):
     def __init__(self, username):
-        super().__init__()  # Initialize QMainWindow
-        self.username = username 
-        self.dark_mode = False # Store the username
-        self.init_ui()  # Set up the UI
+        super().__init__()
+        self.username = username
+        self.current_recipient = None
+        self.dark_mode = False  # Initialize with light mode
+        self.init_ui()
+        self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.is_connected = False
+        self.connect_to_server()
 
     def init_ui(self):
-        self.setWindowTitle(f"Chat Application - {self.username}")
+        self.setWindowTitle(f'Chat - {self.username}')
         self.setGeometry(100, 100, 800, 600)
-
-        self.setWindowTitle("Chat Application with File Sharing")
-        self.setGeometry(100, 100, 600, 400)
-
 
         layout = QVBoxLayout()
 
@@ -300,11 +299,6 @@ class ChatApp(QMainWindow):
         self.accept_button.clicked.connect(self.accept_user)
         action_layout.addWidget(self.accept_button)
 
-        # Change Chat Display Background Button
-        self.color_button = QPushButton("Change Chat Background", self)
-        self.color_button.clicked.connect(self.change_chat_display_background)
-        action_layout.addWidget(self.color_button)
-
         chat_layout.addLayout(action_layout)
         main_layout.addLayout(chat_layout, 3)
 
@@ -313,10 +307,6 @@ class ChatApp(QMainWindow):
         container = QWidget()
         container.setLayout(layout)
         self.setCentralWidget(container)
-
-        # Apply colorful button styles
-        self.apply_button_styles()
-
 
     def toggle_theme(self):
         """Toggle between light and dark modes."""
@@ -340,73 +330,10 @@ class ChatApp(QMainWindow):
         palette.setColor(QPalette.WindowText, QColor(255, 255, 255))
         QApplication.setPalette(palette)
 
-    def change_chat_display_background(self):
-        """Allow the user to select and change the chat display background color or set a single image."""
-        try:
-            # Ask the user to choose between color or image
-            items = ["Color", "Image"]
-            choice, ok = QInputDialog.getItem(
-                self,
-                "Change Chat Background",
-                "Choose background type:",
-                items,
-                0,  # Default choice index
-                editable=False
-            )
-
-            # Proceed only if the user confirms the dialog
-            if ok:
-                if choice == "Color":
-                    # Let the user pick a color
-                    color = QColorDialog.getColor()
-                    if color.isValid():
-                        self.chat_display.setStyleSheet(f"background-color: {color.name()}; color: #000000;")
-                elif choice == "Image":
-                    # Let the user pick a single image
-                    file_path, _ = QFileDialog.getOpenFileName(
-                        self,
-                        "Select Background Image",
-                        "",
-                        "Image Files (*.png *.jpg *.jpeg *.bmp *.gif *.tiff *.svg *.webp)"  # Include all common image types
-                    )
-                    if file_path:
-                        # Set the selected image as the background
-                        self.chat_display.setStyleSheet(
-                            f"background-image: url('{file_path}'); background-repeat: no-repeat; "
-                            f"background-position: center; background-size: cover; color: #000000;"
-                        )
-        except Exception as e:
-            QMessageBox.critical(self, "Error", f"An error occurred: {str(e)}")
-
-
-    def apply_button_styles(self):
-        """Apply colorful styles to buttons."""
-        button_style = """
-        QPushButton {
-            background-color: #4682B4; /* Steel Blue */
-            border-radius: 8px;
-            padding: 5px;
-            font-weight: bold;
-            color: #FFFFFF; /* White text */
-        }
-        QPushButton:hover {
-            background-color: #5A9BD4; /* Lighter Blue */
-        }
-        """
-        self.follow_button.setStyleSheet(button_style)
-        self.unfollow_button.setStyleSheet(button_style)
-        self.accept_button.setStyleSheet(button_style)
-        self.file_button.setStyleSheet(button_style)
-        self.export_button.setStyleSheet(button_style)
-        self.send_button.setStyleSheet(button_style)
-        self.toggle_button.setStyleSheet(button_style)
-        self.color_button.setStyleSheet(button_style)
-
     def accept_user(self):
         """Accept incoming user requests or messages."""
         if self.current_recipient:
             self.chat_display.append(f"You accepted a request from {self.current_recipient}.")
-
 
 
     def connect_to_server(self):
@@ -506,4 +433,3 @@ if __name__ == '__main__':
     login_window = LoginWindow()
     login_window.show()
     sys.exit(app.exec_())
-
