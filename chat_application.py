@@ -7,6 +7,7 @@ from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QVBoxLayout, QHBoxLayout, QWidget,
     QTextEdit, QLineEdit, QPushButton, QLabel, QListWidget, QMessageBox, QFileDialog, QColorDialog, QInputDialog
 )
+from PyQt5.QtGui import QPixmap
 from PyQt5.QtGui import QFont, QColor, QPalette
 from PyQt5.QtCore import Qt
 
@@ -143,10 +144,18 @@ class LoginWindow(QMainWindow):
         self.init_ui()
 
     def init_ui(self):
-        self.setWindowTitle("Login to Chat")
+        self.setWindowTitle("CHAT APPLICATION")
         self.setGeometry(100, 100, 400, 300)
 
         layout = QVBoxLayout()
+
+        # Application Logo
+        logo = QLabel(self)
+        pixmap = QPixmap("logo.png")  # Replace 'logo.png' with your actual logo file path
+        pixmap = pixmap.scaled(100, 100, Qt.KeepAspectRatio)
+        logo.setPixmap(pixmap)
+        logo.setAlignment(Qt.AlignCenter)
+        layout.addWidget(logo)
 
         # Header
         header = QLabel("Welcome to Chat App", self)
@@ -157,21 +166,50 @@ class LoginWindow(QMainWindow):
         # Username
         self.username_input = QLineEdit(self)
         self.username_input.setPlaceholderText("Enter Username")
+        self.username_input.setFixedHeight(40)
         layout.addWidget(self.username_input)
 
         # Password
         self.password_input = QLineEdit(self)
         self.password_input.setEchoMode(QLineEdit.Password)
         self.password_input.setPlaceholderText("Enter Password")
+        self.password_input.setFixedHeight(40)
         layout.addWidget(self.password_input)
 
-        # Buttons
+          # Buttons
         btn_layout = QHBoxLayout()
+        
+        # Login Button
         self.login_button = QPushButton("Login", self)
+        self.login_button.setStyleSheet("""
+            QPushButton {
+                background-color: #4CAF50;  /* Green */
+                color: white;
+                font-size: 14px;
+                padding: 10px;
+                border-radius: 5px;
+            }
+            QPushButton:hover {
+                background-color: #45a049;
+            }
+        """)
         self.login_button.clicked.connect(self.login_user)
         btn_layout.addWidget(self.login_button)
 
+        # Register Button
         self.register_button = QPushButton("Register", self)
+        self.register_button.setStyleSheet("""
+            QPushButton {
+                background-color: #008CBA;  /* Blue */
+                color: white;
+                font-size: 14px;
+                padding: 10px;
+                border-radius: 5px;
+            }
+            QPushButton:hover {
+                background-color: #007bb5;
+            }
+        """)
         self.register_button.clicked.connect(self.register_user)
         btn_layout.addWidget(self.register_button)
 
@@ -212,9 +250,10 @@ class LoginWindow(QMainWindow):
         conn.close()
 
     def open_chat_window(self, username):
-        self.chat_window = ChatApp(username)  # Pass the username
+        self.chat_window = ChatApp(username)
         self.chat_window.show()
         self.close()
+
 
 
 class ChatApp(QMainWindow):
