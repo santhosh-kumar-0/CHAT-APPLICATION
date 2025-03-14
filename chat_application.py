@@ -10,6 +10,8 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtGui import QPixmap
 from PyQt5.QtGui import QFont, QColor, QPalette
 from PyQt5.QtCore import Qt
+from PyQt5.QtWidgets import QMenu
+
 
 
 # Encryption for messages
@@ -84,42 +86,76 @@ class ChatServer:
         return result is not None
 
     def broadcast(self, message, sender_username, recipient_username):
-        if self.can_send_message(sender_username, recipient_username):
-            for client_socket, username in self.clients.items():
-                if username == recipient_username:
-                    try:
-                        client_socket.sendall(f"{sender_username}: {message}".encode())
-                    except Exception as e:
-                        print(f"Error broadcasting message: {e}")
-        else:
+        """
+        Send the message to the intended recipient if the sender is allowed.
+        """
+        if not self.can_send_message(sender_username, recipient_username):
             print(f"Message blocked: {sender_username} does not follow {recipient_username}.")
+            return
+
+        # Look for the recipient in the connected clients
+        recipient_socket = None
+        for client_socket, username in self.clients.items():
+            if username == recipient_username:
+                recipient_socket = client_socket
+                break
+
+        if recipient_socket:
+            try:
+                # Send the message to the recipient
+                recipient_socket.sendall(f"{sender_username}: {message}".encode())
+            except Exception as e:
+                print(f"Error sending message to {recipient_username}: {e}")
+        else:
+            print(f"Recipient {recipient_username} is not online.")
+
+
 
     def handle_client(self, client_socket):
-        username = client_socket.recv(1024).decode()  # First message is the username
-        self.clients[client_socket] = username
-        print(f"New connection: {username}")
+        try:
+            username = client_socket.recv(1024).decode()  # First message is the username
+            self.clients[client_socket] = username
+            print(f"New connection: {username}")
 
-        while True:
-            try:
+            # Notify other users about the new user
+            for sock, uname in self.clients.items():
+                if sock != client_socket:  # Don't notify the new user about themselves
+                    try:
+                        sock.sendall(f"SERVER: {username} has joined the chat.".encode())
+                    except Exception as e:
+                        print(f"Error notifying user {uname}: {e}")
+
+            # Handle incoming messages
+            while True:
                 data = client_socket.recv(1024).decode()
+                if not data:
+                    break  # Connection closed
+
                 if data.startswith("FILE|"):
+                    # Handle file messages
                     parts = data.split("|", 4)
                     sender, recipient, file_name = parts[1], parts[2], parts[3]
                     if self.can_send_message(sender, recipient):
-                        file_data = client_socket.recv(4096)  # Adjust buffer size as needed
+                        file_data = client_socket.recv(4096)
                         with open(f"received_{file_name}", "wb") as file:
                             file.write(file_data)
                         print(f"File {file_name} received from {sender}.")
                 else:
+                    # Regular message handling
                     sender, recipient, message = data.split('|', 2)
                     decrypted_message = decrypt_message(message)
                     self.save_message(sender, recipient, decrypted_message)
-                    self.broadcast(message, sender, recipient)
-            except Exception as e:
-                print(f"Error handling client: {e}")
-                del self.clients[client_socket]
-                client_socket.close()
-                break
+                    self.broadcast(decrypted_message, sender, recipient)
+        except Exception as e:
+            print(f"Error handling client: {e}")
+        finally:
+            # Clean up on client disconnect
+            username = self.clients.get(client_socket, "Unknown")
+            del self.clients[client_socket]
+            client_socket.close()
+            print(f"{username} disconnected.")
+
+
 
     def save_message(self, sender, recipient, message):
         conn = sqlite3.connect(DB_FILE)
@@ -261,15 +297,15 @@ class ChatApp(QMainWindow):
         super().__init__()  # Initialize QMainWindow
         self.username = username 
         self.dark_mode = False # Store the username
+        self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.is_connected = False
+        self.current_recipient = None
         self.init_ui()  # Set up the UI
+        self.connect_to_server()
 
     def init_ui(self):
         self.setWindowTitle(f"Chat Application - {self.username}")
         self.setGeometry(100, 100, 800, 600)
-
-        self.setWindowTitle("Chat Application with File Sharing")
-        self.setGeometry(100, 100, 600, 400)
-
 
         layout = QVBoxLayout()
 
@@ -291,7 +327,8 @@ class ChatApp(QMainWindow):
 
         # User List
         self.user_list = QListWidget(self)
-        self.user_list.itemClicked.connect(self.select_user)
+        self.user_list.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.user_list.customContextMenuRequested.connect(self.show_user_context_menu)
         main_layout.addWidget(self.user_list, 1)
 
         # Chat Layout
@@ -315,36 +352,22 @@ class ChatApp(QMainWindow):
 
         chat_layout.addLayout(message_layout)
 
-        # Action Buttons Layout
-        action_layout = QHBoxLayout()
+        # Dropdown Actions Button
+        self.actions_button = QPushButton("Actions", self)
+        self.actions_menu = QMenu(self)
 
-        self.follow_button = QPushButton("Follow", self)
-        self.follow_button.clicked.connect(self.follow_user)
-        action_layout.addWidget(self.follow_button)
+        # Add menu options
+        self.actions_menu.addAction("Follow", self.follow_user)
+        self.actions_menu.addAction("Unfollow", self.unfollow_user)
+        self.actions_menu.addAction("Share File", self.share_file)
+        self.actions_menu.addAction("Export Chat", self.export_chat)
+        self.actions_menu.addAction("Accept", self.accept_user)
+        self.actions_menu.addAction("Change Chat Background", self.change_chat_display_background)
 
-        self.unfollow_button = QPushButton("Unfollow", self)
-        self.unfollow_button.clicked.connect(self.unfollow_user)
-        action_layout.addWidget(self.unfollow_button)
+        # Attach the menu to the button
+        self.actions_button.setMenu(self.actions_menu)
+        chat_layout.addWidget(self.actions_button)
 
-        self.file_button = QPushButton("Share File", self)
-        self.file_button.clicked.connect(self.share_file)
-        action_layout.addWidget(self.file_button)
-
-        self.export_button = QPushButton("Export Chat", self)
-        self.export_button.clicked.connect(self.export_chat)
-        action_layout.addWidget(self.export_button)
-
-        # Accept Button
-        self.accept_button = QPushButton("Accept", self)
-        self.accept_button.clicked.connect(self.accept_user)
-        action_layout.addWidget(self.accept_button)
-
-        # Change Chat Display Background Button
-        self.color_button = QPushButton("Change Chat Background", self)
-        self.color_button.clicked.connect(self.change_chat_display_background)
-        action_layout.addWidget(self.color_button)
-
-        chat_layout.addLayout(action_layout)
         main_layout.addLayout(chat_layout, 3)
 
         layout.addLayout(main_layout)
@@ -355,7 +378,6 @@ class ChatApp(QMainWindow):
 
         # Apply colorful button styles
         self.apply_button_styles()
-
 
     def toggle_theme(self):
         """Toggle between light and dark modes."""
@@ -382,34 +404,28 @@ class ChatApp(QMainWindow):
     def change_chat_display_background(self):
         """Allow the user to select and change the chat display background color or set a single image."""
         try:
-            # Ask the user to choose between color or image
             items = ["Color", "Image"]
             choice, ok = QInputDialog.getItem(
                 self,
                 "Change Chat Background",
                 "Choose background type:",
                 items,
-                0,  # Default choice index
+                0,
                 editable=False
             )
-
-            # Proceed only if the user confirms the dialog
             if ok:
                 if choice == "Color":
-                    # Let the user pick a color
                     color = QColorDialog.getColor()
                     if color.isValid():
                         self.chat_display.setStyleSheet(f"background-color: {color.name()}; color: #000000;")
                 elif choice == "Image":
-                    # Let the user pick a single image
                     file_path, _ = QFileDialog.getOpenFileName(
                         self,
                         "Select Background Image",
                         "",
-                        "Image Files (*.png *.jpg *.jpeg *.bmp *.gif *.tiff *.svg *.webp)"  # Include all common image types
+                        "Image Files (*.png *.jpg *.jpeg *.bmp *.gif *.tiff *.svg *.webp)"
                     )
                     if file_path:
-                        # Set the selected image as the background
                         self.chat_display.setStyleSheet(
                             f"background-image: url('{file_path}'); background-repeat: no-repeat; "
                             f"background-position: center; background-size: cover; color: #000000;"
@@ -417,36 +433,28 @@ class ChatApp(QMainWindow):
         except Exception as e:
             QMessageBox.critical(self, "Error", f"An error occurred: {str(e)}")
 
-
     def apply_button_styles(self):
         """Apply colorful styles to buttons."""
         button_style = """
         QPushButton {
-            background-color: #4682B4; /* Steel Blue */
+            background-color: #4682B4;
             border-radius: 8px;
             padding: 5px;
             font-weight: bold;
-            color: #FFFFFF; /* White text */
+            color: #FFFFFF;
         }
         QPushButton:hover {
-            background-color: #5A9BD4; /* Lighter Blue */
+            background-color: #5A9BD4;
         }
         """
-        self.follow_button.setStyleSheet(button_style)
-        self.unfollow_button.setStyleSheet(button_style)
-        self.accept_button.setStyleSheet(button_style)
-        self.file_button.setStyleSheet(button_style)
-        self.export_button.setStyleSheet(button_style)
+        self.actions_button.setStyleSheet(button_style)
         self.send_button.setStyleSheet(button_style)
         self.toggle_button.setStyleSheet(button_style)
-        self.color_button.setStyleSheet(button_style)
 
     def accept_user(self):
         """Accept incoming user requests or messages."""
         if self.current_recipient:
             self.chat_display.append(f"You accepted a request from {self.current_recipient}.")
-
-
 
     def connect_to_server(self):
         try:
@@ -468,19 +476,21 @@ class ChatApp(QMainWindow):
             self.user_list.addItem(user[0])
         conn.close()
 
+    def show_user_context_menu(self, position):
+        """Show context menu for user actions."""
+        item = self.user_list.itemAt(position)
+        if item:
+            self.current_recipient = item.text()
+            menu = QMenu(self)
+            menu.addAction("Follow", self.follow_user)
+            menu.addAction("Unfollow", self.unfollow_user)
+            menu.exec_(self.user_list.viewport().mapToGlobal(position))
+
     def select_user(self, item):
         self.current_recipient = item.text()
         self.chat_display.append(f"Chatting with {self.current_recipient}")
 
-    def receive_messages(self):
-        while self.is_connected:
-            try:
-                data = self.socket.recv(1024).decode()
-                decrypted_message = decrypt_message(data)
-                self.chat_display.append(decrypted_message)
-            except Exception as e:
-                self.chat_display.append(f"Error: {e}")
-                break
+
 
     def send_message(self):
         message = self.msg_input.text()
@@ -493,6 +503,16 @@ class ChatApp(QMainWindow):
                 self.msg_input.clear()
             except Exception as e:
                 self.chat_display.append(f"Error: {e}")
+
+    def receive_messages(self):
+        while self.is_connected:
+            try:
+                data = self.socket.recv(1024).decode()
+                if data:
+                    self.chat_display.append(data)  # Decrypted message is displayed directly
+            except Exception as e:
+                self.chat_display.append(f"Connection lost: {e}")
+                break
 
     def follow_user(self):
         if self.current_recipient:
@@ -535,6 +555,7 @@ class ChatApp(QMainWindow):
                 with open(file_name, "w") as file:
                     file.write(self.chat_display.toPlainText())
                 QMessageBox.information(self, "Export Successful", f"Chat saved to {file_name}")
+
 
 
 if __name__ == '__main__':
