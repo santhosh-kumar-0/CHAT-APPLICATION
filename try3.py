@@ -3,7 +3,6 @@ import os
 import socket
 import threading
 import sqlite3
-import requests
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QVBoxLayout, QHBoxLayout, QWidget,
     QTextEdit, QLineEdit, QPushButton, QLabel, QListWidget, QMessageBox, QFileDialog, QColorDialog, QInputDialog
@@ -12,7 +11,6 @@ from PyQt5.QtGui import QPixmap
 from PyQt5.QtGui import QFont, QColor, QPalette
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import QMenu
-from PyQt5.QtWidgets import QMessageBox
 
 
 
@@ -20,7 +18,7 @@ from PyQt5.QtWidgets import QMessageBox
 from cryptography.fernet import Fernet
 
 # Server Address and Port
-HOST = '192.168.168.6'
+HOST = '127.0.0.1'
 PORT = 5000
 
 # Initialize SQLite Database
@@ -69,7 +67,7 @@ def initialize_database():
 
 # Backend: Server Code
 class ChatServer:
-    def __init__(self, host, port):
+    def _init_(self, host, port):
         self.server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.server.bind((host, port))
         self.server.listen(5)
@@ -88,28 +86,25 @@ class ChatServer:
         return result is not None
 
     def broadcast(self, message, sender_username, recipient_username):
-        """
-        Send the message to the intended recipient if the sender is allowed.
-        """
-        if not self.can_send_message(sender_username, recipient_username):
-            print(f"Message blocked: {sender_username} does not follow {recipient_username}.")
-            return
+     if not self.can_send_message(sender_username, recipient_username):
+         print(f"Message blocked: {sender_username} does not follow {recipient_username}.")
+         return
 
-        # Look for the recipient in the connected clients
-        recipient_socket = None
-        for client_socket, username in self.clients.items():
-            if username == recipient_username:
+     recipient_socket = None
+     for client_socket, username in self.clients.items():
+         if username == recipient_username:
                 recipient_socket = client_socket
                 break
 
-        if recipient_socket:
-            try:
-                # Send the message to the recipient
-                recipient_socket.sendall(f"{sender_username}: {message}".encode())
-            except Exception as e:
-                print(f"Error sending message to {recipient_username}: {e}")
+     if recipient_socket:
+        try:
+            recipient_socket.sendall(f"{sender_username}: {message}".encode())
+            print(f"Message sent to {recipient_username}: {message}")  # Debugging
+        except Exception as e:
+            print(f"Error sending message to {recipient_username}: {e}")
         else:
-            print(f"Recipient {recipient_username} is not online.")
+            print(f"Recipient {recipient_username} is offline. Saving message to database.")
+
 
 
 
@@ -177,8 +172,8 @@ class ChatServer:
 
 # Login Window
 class LoginWindow(QMainWindow):
-    def __init__(self):
-        super().__init__()
+    def _init_(self):
+        super()._init_()
         self.init_ui()
 
     def init_ui(self):
@@ -292,40 +287,11 @@ class LoginWindow(QMainWindow):
         self.chat_window.show()
         self.close()
 
-class APIHandler:
-    def __init__(self):
-        self.api_url = "https://api.gemini.ai/v1/translate"  # Replace with the actual API URL
-        self.api_key = "AIzaSyAdBZQ55OeV1pGWnWiI2QVsWCO97wUvY2I"  # Replace with your Gemini AI API key
-
-    def translate_text(self, text, target_language="en"):
-        """
-        Translate text using Gemini AI or any translation API.
-        """
-        api_url = "https://api.gemini.ai/v1/translate"  # Replace with the correct API URL
-        api_key = "YOUR_API_KEY"  # Replace with your API key
-
-        headers = {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json"
-        }
-        payload = {
-            "text": text,
-            "target_language": target_language
-        }
-        try:
-            response = requests.post(api_url, json=payload, headers=headers)
-            if response.status_code == 200:
-                return response.json().get("translated_text", "")
-            else:
-                return f"Error: {response.json().get('message', 'Translation failed.')}"
-        except requests.RequestException as e:
-            return f"Error: {str(e)}"
-
 
 
 class ChatApp(QMainWindow):
-    def __init__(self, username):
-        super().__init__()  # Initialize QMainWindow
+    def _init_(self, username):
+        super()._init_()  # Initialize QMainWindow
         self.username = username 
         self.dark_mode = False # Store the username
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -381,35 +347,18 @@ class ChatApp(QMainWindow):
         self.send_button.clicked.connect(self.send_message)
         message_layout.addWidget(self.send_button)
 
-        self.translate_button = QPushButton("Translate", self)
-        self.translate_button.clicked.connect(self.translate_selected_message)
-        self.translate_button.setStyleSheet("""
-            QPushButton {
-                background-color: #FF6347; /* Tomato Red */
-                color: #FFFFFF; /* White text */
-                font-weight: bold;
-                border-radius: 8px;
-                padding: 5px;
-            }
-            QPushButton:hover {
-                background-color: #FF4500; /* Orange Red */
-            }
-        """)
-        chat_layout.addWidget(self.translate_button)  # Add to chat layout
-
-
-
-
         chat_layout.addLayout(message_layout)
 
         # Dropdown Actions Button
-        self.actions_button = QPushButton("MORE OPTIONS", self)
+        self.actions_button = QPushButton("Actions", self)
         self.actions_menu = QMenu(self)
 
         # Add menu options
-        
+        self.actions_menu.addAction("Follow", self.follow_user)
+        self.actions_menu.addAction("Unfollow", self.unfollow_user)
         self.actions_menu.addAction("Share File", self.share_file)
         self.actions_menu.addAction("Export Chat", self.export_chat)
+        self.actions_menu.addAction("Accept", self.accept_user)
         self.actions_menu.addAction("Change Chat Background", self.change_chat_display_background)
 
         # Attach the menu to the button
@@ -434,51 +383,6 @@ class ChatApp(QMainWindow):
         else:
             self.set_dark_mode()
         self.dark_mode = not self.dark_mode
-
-    def translate_selected_message(self):
-        # Get the selected chat message
-        selected_message = self.get_selected_message()
-        if not selected_message:
-            QMessageBox.warning(self, "Error", "Please select a message to translate.")
-            return
-
-        # Provide a list of common languages
-        language_options = {
-            "English": "en",
-            "Spanish": "es",
-            "French": "fr",
-            "German": "de",
-            "Chinese (Simplified)": "zh-cn",
-            "Hindi": "hi",
-            "Arabic": "ar",
-            "Japanese": "ja",
-            "Tamil": "ta"  # Added Tamil
-        }
-        items = list(language_options.keys())
-        choice, ok = QInputDialog.getItem(
-            self, "Translate", "Choose target language:", items, 0, editable=False
-        )
-        if not ok or not choice:
-            return
-
-        # Get the language code
-        target_language = language_options[choice]
-
-        try:
-            # Translate the message
-            translated = self.translator.translate(selected_message, dest=target_language)
-            translated_text = translated.text
-            self.chat_display.append(f"Translated ({choice}): {translated_text}")
-        except Exception as e:
-            QMessageBox.critical(self, "Translation Error", f"Error translating message: {str(e)}")
-
-
-    def get_selected_message(self):
-        cursor = self.chat_display.textCursor()
-        selected_text = cursor.selectedText()
-        return selected_text if selected_text else None
-
-
 
     def set_light_mode(self):
         """Set light theme."""
@@ -550,15 +454,18 @@ class ChatApp(QMainWindow):
             self.chat_display.append(f"You accepted a request from {self.current_recipient}.")
 
     def connect_to_server(self):
-        try:
+     try:
             self.socket.connect((HOST, PORT))
             self.socket.sendall(self.username.encode())
             self.is_connected = True
+            print(f"Connected to server as {self.username}")  # Debug message
 
             threading.Thread(target=self.receive_messages, daemon=True).start()
             self.load_users()
-        except Exception as e:
+     except Exception as e:
             QMessageBox.warning(self, "Connection Failed", str(e))
+            print(f"Connection error: {e}")  # Debug message 
+
 
     def load_users(self):
         conn = sqlite3.connect(DB_FILE)
@@ -598,14 +505,18 @@ class ChatApp(QMainWindow):
                 self.chat_display.append(f"Error: {e}")
 
     def receive_messages(self):
-        while self.is_connected:
-            try:
-                data = self.socket.recv(1024).decode()
-                if data:
-                    self.chat_display.append(data)  # Decrypted message is displayed directly
-            except Exception as e:
-                self.chat_display.append(f"Connection lost: {e}")
+     while self.is_connected:
+        try:
+            data = self.socket.recv(1024).decode()
+            if not data:
+                print("Server disconnected.")
                 break
+            print(f"Received message: {data}")  # Debugging
+            self.chat_display.append(data)
+        except Exception as e:
+            print(f"Error receiving messages: {e}")
+            break
+
 
     def follow_user(self):
         if self.current_recipient:
@@ -651,7 +562,7 @@ class ChatApp(QMainWindow):
 
 
 
-if __name__ == '__main__':
+if __name__ == "_main_":
     initialize_database()
     threading.Thread(target=lambda: ChatServer(HOST, PORT).start(), daemon=True).start()
     app = QApplication(sys.argv)
@@ -659,4 +570,3 @@ if __name__ == '__main__':
     login_window = LoginWindow()
     login_window.show()
     sys.exit(app.exec_())
-
