@@ -4,6 +4,7 @@ import socket
 import threading
 import sqlite3
 import requests
+import argparse
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QVBoxLayout, QHBoxLayout, QWidget,
     QTextEdit, QLineEdit, QPushButton, QLabel, QListWidget, QMessageBox, QFileDialog, QColorDialog, QInputDialog
@@ -13,14 +14,12 @@ from PyQt5.QtGui import QFont, QColor, QPalette
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import QMenu
 from PyQt5.QtWidgets import QMessageBox
-
-
-
+from googletrans import Translator
 # Encryption for messages
 from cryptography.fernet import Fernet
 
 # Server Address and Port
-HOST = '192.168.168.6'
+HOST = '192.168.39.187'
 PORT = 5000
 
 # Initialize SQLite Database
@@ -30,14 +29,11 @@ DB_FILE = "chat_app.db"
 ENCRYPTION_KEY = Fernet.generate_key()
 cipher = Fernet(ENCRYPTION_KEY)
 
-
 def encrypt_message(message):
     return cipher.encrypt(message.encode()).decode()
 
-
 def decrypt_message(message):
     return cipher.decrypt(message.encode()).decode()
-
 
 def initialize_database():
     conn = sqlite3.connect(DB_FILE)
@@ -65,8 +61,6 @@ def initialize_database():
     """)
     conn.commit()
     conn.close()
-
-
 # Backend: Server Code
 class ChatServer:
     def __init__(self, host, port):
@@ -110,8 +104,6 @@ class ChatServer:
                 print(f"Error sending message to {recipient_username}: {e}")
         else:
             print(f"Recipient {recipient_username} is not online.")
-
-
 
     def handle_client(self, client_socket):
         try:
@@ -157,8 +149,6 @@ class ChatServer:
             client_socket.close()
             print(f"{username} disconnected.")
 
-
-
     def save_message(self, sender, recipient, message):
         conn = sqlite3.connect(DB_FILE)
         cursor = conn.cursor()
@@ -173,8 +163,6 @@ class ChatServer:
         while True:
             client_socket, _ = self.server.accept()
             threading.Thread(target=self.handle_client, args=(client_socket,), daemon=True).start()
-
-
 # Login Window
 class LoginWindow(QMainWindow):
     def __init__(self):
@@ -220,12 +208,7 @@ class LoginWindow(QMainWindow):
         # Login Button
         self.login_button = QPushButton("Login", self)
         self.login_button.setStyleSheet("""
-            QPushButton {
-                background-color: #4CAF50;  /* Green */
-                color: white;
-                font-size: 14px;
-                padding: 10px;
-                border-radius: 5px;
+            QPushButton {background-color: #4CAF50;  /* Green */color: white;font-size: 14px;padding: 10px;border-radius: 5px;
             }
             QPushButton:hover {
                 background-color: #45a049;
@@ -237,12 +220,7 @@ class LoginWindow(QMainWindow):
         # Register Button
         self.register_button = QPushButton("Register", self)
         self.register_button.setStyleSheet("""
-            QPushButton {
-                background-color: #008CBA;  /* Blue */
-                color: white;
-                font-size: 14px;
-                padding: 10px;
-                border-radius: 5px;
+            QPushButton {background-color: #008CBA;  /* Blue */color: white;font-size: 14px;padding: 10px;border-radius: 5px;
             }
             QPushButton:hover {
                 background-color: #007bb5;
@@ -291,7 +269,6 @@ class LoginWindow(QMainWindow):
         self.chat_window = ChatApp(username)
         self.chat_window.show()
         self.close()
-
 class APIHandler:
     def __init__(self):
         self.api_url = "https://api.gemini.ai/v1/translate"  # Replace with the actual API URL
@@ -302,7 +279,7 @@ class APIHandler:
         Translate text using Gemini AI or any translation API.
         """
         api_url = "https://api.gemini.ai/v1/translate"  # Replace with the correct API URL
-        api_key = "YOUR_API_KEY"  # Replace with your API key
+        api_key = "AIzaSyAdBZQ55OeV1pGWnWiI2QVsWCO97wUvY2I"  # Replace with your API key
 
         headers = {
             "Authorization": f"Bearer {api_key}",
@@ -321,8 +298,6 @@ class APIHandler:
         except requests.RequestException as e:
             return f"Error: {str(e)}"
 
-
-
 class ChatApp(QMainWindow):
     def __init__(self, username):
         super().__init__()  # Initialize QMainWindow
@@ -331,6 +306,7 @@ class ChatApp(QMainWindow):
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.is_connected = False
         self.current_recipient = None
+        self.translator = Translator()
         self.init_ui()  # Set up the UI
         self.connect_to_server()
 
@@ -384,12 +360,7 @@ class ChatApp(QMainWindow):
         self.translate_button = QPushButton("Translate", self)
         self.translate_button.clicked.connect(self.translate_selected_message)
         self.translate_button.setStyleSheet("""
-            QPushButton {
-                background-color: #FF6347; /* Tomato Red */
-                color: #FFFFFF; /* White text */
-                font-weight: bold;
-                border-radius: 8px;
-                padding: 5px;
+            QPushButton {background-color: #FF6347; /* Tomato Red */color: #FFFFFF; /* White text */font-weight: bold;border-radius: 8px;padding: 5px;
             }
             QPushButton:hover {
                 background-color: #FF4500; /* Orange Red */
@@ -397,11 +368,7 @@ class ChatApp(QMainWindow):
         """)
         chat_layout.addWidget(self.translate_button)  # Add to chat layout
 
-
-
-
         chat_layout.addLayout(message_layout)
-
         # Dropdown Actions Button
         self.actions_button = QPushButton("MORE OPTIONS", self)
         self.actions_menu = QMenu(self)
@@ -443,16 +410,7 @@ class ChatApp(QMainWindow):
             return
 
         # Provide a list of common languages
-        language_options = {
-            "English": "en",
-            "Spanish": "es",
-            "French": "fr",
-            "German": "de",
-            "Chinese (Simplified)": "zh-cn",
-            "Hindi": "hi",
-            "Arabic": "ar",
-            "Japanese": "ja",
-            "Tamil": "ta"  # Added Tamil
+        language_options = {"English": "en","Spanish": "es","French": "fr","German": "de","Chinese (Simplified)": "zh-cn","Hindi": "hi","Arabic": "ar","Japanese": "ja","Tamil": "ta"  # Added Tamil
         }
         items = list(language_options.keys())
         choice, ok = QInputDialog.getItem(
@@ -472,13 +430,10 @@ class ChatApp(QMainWindow):
         except Exception as e:
             QMessageBox.critical(self, "Translation Error", f"Error translating message: {str(e)}")
 
-
     def get_selected_message(self):
         cursor = self.chat_display.textCursor()
         selected_text = cursor.selectedText()
         return selected_text if selected_text else None
-
-
 
     def set_light_mode(self):
         """Set light theme."""
@@ -530,11 +485,7 @@ class ChatApp(QMainWindow):
         """Apply colorful styles to buttons."""
         button_style = """
         QPushButton {
-            background-color: #4682B4;
-            border-radius: 8px;
-            padding: 5px;
-            font-weight: bold;
-            color: #FFFFFF;
+            background-color: #4682B4;border-radius: 8px;padding: 5px;font-weight: bold;color: #FFFFFF;
         }
         QPushButton:hover {
             background-color: #5A9BD4;
@@ -582,8 +533,6 @@ class ChatApp(QMainWindow):
     def select_user(self, item):
         self.current_recipient = item.text()
         self.chat_display.append(f"Chatting with {self.current_recipient}")
-
-
 
     def send_message(self):
         message = self.msg_input.text()
@@ -649,8 +598,6 @@ class ChatApp(QMainWindow):
                     file.write(self.chat_display.toPlainText())
                 QMessageBox.information(self, "Export Successful", f"Chat saved to {file_name}")
 
-
-
 if __name__ == '__main__':
     initialize_database()
     threading.Thread(target=lambda: ChatServer(HOST, PORT).start(), daemon=True).start()
@@ -659,4 +606,3 @@ if __name__ == '__main__':
     login_window = LoginWindow()
     login_window.show()
     sys.exit(app.exec_())
-
